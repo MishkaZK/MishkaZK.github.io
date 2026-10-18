@@ -291,7 +291,6 @@ async function load(spot) {
 
 $("geoBtn").addEventListener("click", () => {
   if (!navigator.geolocation) { showErr("Geolocation is not supported by this browser."); return; }
-  $("place").textContent = "locating...";
   navigator.geolocation.getCurrentPosition(
     pos => load({ lat: pos.coords.latitude, lon: pos.coords.longitude, label: "your location" }),
     err => {
