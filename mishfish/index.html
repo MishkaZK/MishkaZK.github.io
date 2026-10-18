@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MishFish - Fishing Forecast</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <meta name="description" content="Fishing forecast with live weather, barometric pressure trend, wave and swell trends, and moon phase.">
 <style>
 /* Ocean palette, same house style as the portfolio. No libraries, no tracking. */
@@ -78,6 +79,14 @@ h2 { font-size: .78rem; font-weight: 750; letter-spacing: .16em; text-transform:
 a { color: var(--ocean); text-decoration-color: rgba(8,107,130,.32); text-underline-offset: 4px; }
 a:hover { color: #00485d; text-decoration-color: currentColor; }
 footer { text-align: center; padding: 30px 12px 38px; color: var(--muted); font-size: .77rem; }
+#map { height: 320px; border-radius: 12px; border: 1px solid var(--line); }
+#mapSec { grid-column: 1 / -1; }
+.hits { width: 100%; display: flex; flex-direction: column; gap: 5px; }
+.hits button { text-align: left; color: var(--ink); background: #edf6f7; border: 1px solid var(--line); font-weight: 500; }
+.hits button:hover { background: #dff0f2; }
+.leaflet-container { font: inherit; }
+.cur-arrow { background: transparent; border: none; }
+.cur-arrow span { color: var(--ocean); text-shadow: 0 0 4px #fff, 0 0 2px #fff; }
 @media (max-width: 640px) {
   body { padding-inline: 20px; }
   header { padding: 52px 0 30px; margin-bottom: 22px; }
@@ -98,11 +107,20 @@ footer { text-align: center; padding: 30px 12px 38px; color: var(--muted); font-
     <input id="latIn" type="number" step="any" min="-90" max="90" placeholder="lat" aria-label="latitude">
     <input id="lonIn" type="number" step="any" min="-180" max="180" placeholder="lon" aria-label="longitude">
     <button id="setBtn" type="button" class="ghost">Set spot</button>
+    <input id="addrIn" type="text" placeholder="Search a place or address" aria-label="search a place or address" style="flex:1; min-width:170px;">
+    <button id="searchBtn" type="button" class="ghost">Search</button>
+    <div class="hits" id="hits"></div>
   </div>
   <div class="err" id="errBox"></div>
 </header>
 
 <main>
+  <section id="mapSec">
+    <h2>Pick a spot</h2>
+    <div id="map"></div>
+    <p class="note">Tap or click anywhere on the map to set the fishing spot. Arrows show sea current direction and speed (coarse model data, less reliable right at the coast).</p>
+  </section>
+
   <section id="now">
     <h2>Right now</h2>
     <div class="big" id="nowTemp">-</div>
@@ -123,6 +141,8 @@ footer { text-align: center; padding: 30px 12px 38px; color: var(--muted); font-
     <div id="wTrend"></div>
     <div class="rows" id="wRows"></div>
     <svg class="spark" id="wSpark" viewBox="0 0 300 64" preserveAspectRatio="none" aria-hidden="true"></svg>
+    <p class="note" style="margin-bottom:4px;">Max wave height per day, next 7 days:</p>
+    <svg class="spark" id="weekBars" viewBox="0 0 300 90" style="height:90px;" aria-hidden="true"></svg>
   </section>
 
   <section id="moon">
@@ -135,9 +155,10 @@ footer { text-align: center; padding: 30px 12px 38px; color: var(--muted); font-
 </main>
 
 <footer>
-  Weather &amp; marine data: <a href="https://open-meteo.com/" rel="noopener">Open-Meteo.com</a> (CC BY 4.0). Moon phase computed on your device. No accounts, no keys, no tracking.
+  Weather &amp; marine data: <a href="https://open-meteo.com/" rel="noopener">Open-Meteo.com</a> (CC BY 4.0). Moon phase computed on your device. Map &copy; <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> contributors, built with <a href="https://leafletjs.com/" rel="noopener">Leaflet</a>. No accounts, no keys, no tracking.
 </footer>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const DEFAULT = { lat: 31.95, lon: 34.70, label: "Rishon LeTsiyyon beach (default)" };
 let SPOT = { ...DEFAULT };
@@ -207,6 +228,35 @@ function moonInfo(date) {
   return { age, illum, name, emoji, waxing, toFull, toNew };
 }
 
+function weekBars(svg, times, values) {
+  const days = {}, order = [];
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  times.forEach((t, i) => {
+    const d = new Date(t);
+    if (d < today) return;
+    const key = t.slice(0, 10);
+    if (!(key in days)) { days[key] = -Infinity; order.push(key); }
+    const v = values[i];
+    if (v !== null && v !== undefined && v > days[key]) days[key] = v;
+  });
+  const keys = order.slice(0, 7);
+  if (!keys.length) { svg.innerHTML = ""; return; }
+  const max = Math.max(...keys.map(k => days[k] > 0 ? days[k] : 0), 0.1);
+  const W = 300, H = 90, pad = 4, labelH = 14, valH = 12;
+  const bw = (W - pad * 2) / keys.length;
+  let out = "";
+  keys.forEach((k, i) => {
+    const v = days[k] > 0 ? days[k] : 0;
+    const bh = (v / max) * (H - labelH - valH - pad);
+    const x = pad + i * bw + 3, y = H - labelH - bh;
+    const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date(k + "T12:00").getDay()];
+    out += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(bw - 6).toFixed(1)}" height="${bh.toFixed(1)}" rx="4" fill="var(--ocean)" opacity="${i === 0 ? 0.95 : 0.55}"></rect>`;
+    out += `<text x="${(x + (bw - 6) / 2).toFixed(1)}" y="${(y - 3).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--muted)">${v.toFixed(1)}</text>`;
+    out += `<text x="${(x + (bw - 6) / 2).toFixed(1)}" y="${H - 2}" text-anchor="middle" font-size="9" fill="var(--muted)">${wd}</text>`;
+  });
+  svg.innerHTML = out;
+}
+
 function renderMoon() {
   const m = moonInfo(new Date());
   $("mEmoji").textContent = m.emoji;
@@ -226,12 +276,13 @@ async function load(spot) {
   $("place").textContent = spot.label;
   $("latIn").value = spot.lat.toFixed(4);
   $("lonIn").value = spot.lon.toFixed(4);
+  syncMap(spot);
   const fUrl = `https://api.open-meteo.com/v1/forecast?latitude=${spot.lat}&longitude=${spot.lon}` +
     `&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m` +
     `&hourly=pressure_msl&past_days=1&forecast_days=2&timezone=auto&wind_speed_unit=kmh`;
   const mUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${spot.lat}&longitude=${spot.lon}` +
-    `&hourly=wave_height,wave_period,wave_direction,swell_wave_height,swell_wave_period,swell_wave_direction,sea_surface_temperature` +
-    `&past_days=1&forecast_days=2&timezone=auto`;
+    `&hourly=wave_height,wave_period,wave_direction,swell_wave_height,swell_wave_period,swell_wave_direction,sea_surface_temperature,ocean_current_velocity,ocean_current_direction` +
+    `&past_days=1&forecast_days=7&timezone=auto`;
   let fc, mc;
   try {
     [fc, mc] = await Promise.all([
@@ -273,21 +324,112 @@ async function load(spot) {
     const h = mc.hourly;
     const wNow = h.wave_height[wi], w3 = h.wave_height[Math.max(0, wi - 3)];
     $("wNow").innerHTML = `${fmt(wNow,2)}<small> m waves · ${fmt(h.wave_period[wi],0)} s period</small>`;
-    $("wTrend").innerHTML = trend(wNow, w3, "m", 0.1, false);
+    const cur = h.ocean_current_velocity ? h.ocean_current_velocity[wi] : null;
+    const cur3 = h.ocean_current_velocity ? h.ocean_current_velocity[Math.max(0, wi - 3)] : null;
+    const curDir = h.ocean_current_direction ? h.ocean_current_direction[wi] : null;
+    $("wTrend").innerHTML = trend(wNow, w3, "m", 0.1, false) + " " +
+      (cur === null || cur === undefined ? "" : trend(cur, cur3, "km/h", 0.1, false).replace("/ 3h", "current / 3h"));
     $("wRows").innerHTML =
       `<div><span class="k">Wave direction:</span> ${degToCompass(h.wave_direction[wi])} (${Math.round(h.wave_direction[wi])}°)</div>` +
       `<div><span class="k">Swell:</span> ${fmt(h.swell_wave_height[wi],2)} m · ${fmt(h.swell_wave_period[wi],0)} s from ${degToCompass(h.swell_wave_direction[wi])}</div>` +
+      (cur === null || cur === undefined
+        ? `<div><span class="k">Current:</span> no current data for this spot</div>`
+        : `<div><span class="k">Current:</span> ${fmt(cur,1)} km/h (${fmt(cur / 1.852,1)} kn) toward ${degToCompass(curDir)} (${Math.round(curDir)}°)</div>`) +
       `<div><span class="k">Sea temperature:</span> ${fmt(h.sea_surface_temperature[wi],1)} °C</div>`;
     spark($("wSpark"), h.wave_height.slice(Math.max(0, wi - 23), wi + 1), wTimes, Math.min(23, wi));
+    weekBars($("weekBars"), wTimes, h.wave_height);
   } else {
     $("wNow").textContent = "-";
     $("wTrend").innerHTML = "";
     $("wRows").innerHTML = `<div>No marine data for this spot. It may be too far inland - try a point closer to the coast.</div>`;
     spark($("wSpark"), [], [], 0);
+    weekBars($("weekBars"), [], []);
   }
 
   renderMoon();
+  refreshCurrents();
 }
+
+let map = null, marker = null;
+function initMap(lat, lon) {
+  map = L.map("map").setView([lat, lon], 9);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+  marker = L.marker([lat, lon]).addTo(map);
+  map.on("click", e => {
+    load({ lat: e.latlng.lat, lon: e.latlng.lng, label: e.latlng.lat.toFixed(3) + ", " + e.latlng.lng.toFixed(3) });
+  });
+  map.on("moveend", () => { clearTimeout(currentTimer); currentTimer = setTimeout(refreshCurrents, 700); });
+}
+function syncMap(spot) {
+  if (!map) return;
+  marker.setLatLng([spot.lat, spot.lon]);
+  map.panTo([spot.lat, spot.lon]);
+}
+
+let currentLayer = null, currentTimer = null;
+function refreshCurrents() {
+  if (!map) return;
+  const b = map.getBounds();
+  const cols = 5, rows = 4, lats = [], lons = [], pts = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const la = b.getSouth() + (r + 0.5) / rows * (b.getNorth() - b.getSouth());
+    const lo = b.getWest() + (c + 0.5) / cols * (b.getEast() - b.getWest());
+    lats.push(la.toFixed(3)); lons.push(lo.toFixed(3)); pts.push([la, lo]);
+  }
+  fetch("https://marine-api.open-meteo.com/v1/marine?latitude=" + lats.join(",") + "&longitude=" + lons.join(",") +
+        "&hourly=ocean_current_velocity,ocean_current_direction&forecast_days=1&timezone=auto")
+    .then(r => r.json()).then(d => {
+      const arr = Array.isArray(d) ? d : [d];
+      if (currentLayer) currentLayer.remove();
+      currentLayer = L.layerGroup();
+      arr.forEach((p, i) => {
+        if (!p.hourly) return;
+        const idx = hourIndex(p.hourly.time);
+        const v = p.hourly.ocean_current_velocity[idx], dir = p.hourly.ocean_current_direction[idx];
+        if (v === null || v === undefined || dir === null || dir === undefined) return;
+        const size = Math.min(30, 14 + v * 6);
+        const op = Math.min(0.95, 0.4 + v * 0.25);
+        const icon = L.divIcon({
+          className: "cur-arrow",
+          html: `<span style="display:inline-block;transform:rotate(${dir - 90}deg);font-size:${size}px;opacity:${op}">➤</span>`,
+          iconSize: [size, size], iconAnchor: [size / 2, size / 2]
+        });
+        currentLayer.addLayer(L.marker(pts[i], { icon, interactive: false, keyboard: false }));
+      });
+      currentLayer.addTo(map);
+    }).catch(() => {});
+}
+
+async function doSearch() {
+  const q = $("addrIn").value.trim();
+  if (!q) return;
+  const hits = $("hits");
+  hits.innerHTML = "";
+  try {
+    const r = await fetch("https://geocoding-api.open-meteo.com/v1/search?name=" + encodeURIComponent(q) + "&count=5&language=en&format=json");
+    const d = await r.json();
+    if (!d.results || !d.results.length) { showErr("No place found for '" + q + "'."); return; }
+    showErr("");
+    d.results.forEach(p => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = [p.name, p.admin1, p.country].filter(Boolean).join(", ");
+      b.addEventListener("click", () => {
+        hits.innerHTML = "";
+        $("addrIn").value = "";
+        load({ lat: p.latitude, lon: p.longitude, label: b.textContent });
+      });
+      hits.appendChild(b);
+    });
+  } catch (e) {
+    showErr("Place search failed (" + e.message + ").");
+  }
+}
+$("searchBtn").addEventListener("click", doSearch);
+$("addrIn").addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
 
 $("geoBtn").addEventListener("click", () => {
   if (!navigator.geolocation) { showErr("Geolocation is not supported by this browser."); return; }
@@ -310,6 +452,7 @@ $("setBtn").addEventListener("click", () => {
   load({ lat, lon, label: `${lat.toFixed(3)}, ${lon.toFixed(3)}` });
 });
 
+initMap(DEFAULT.lat, DEFAULT.lon);
 load({ ...DEFAULT });
 $("geoBtn").click();
 </script>
