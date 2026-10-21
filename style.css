@@ -115,8 +115,8 @@ li:last-child { margin-bottom: 0; }
 li::marker { color: var(--card-heading); }
 #skills ul { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 #skills li { margin: 0; border: 1px solid var(--chip-border); background: var(--chip-bg); color: var(--chip-ink); border-radius: 9px; padding: 6px 12px; font-size: .88rem; }
-#contact { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 26px 34px; }
-#contact h2 { margin-bottom: 0; }
+.contact { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 1rem; }
+.contact .dot { color: var(--muted); }
 a { color: var(--link); text-decoration-color: color-mix(in srgb, var(--link) 40%, transparent); text-underline-offset: 4px; overflow-wrap: anywhere; }
 a:hover { color: var(--link-hover); text-decoration-color: currentColor; }
 a:focus-visible { outline: 2px solid var(--link); outline-offset: 5px; border-radius: 3px; }
@@ -131,7 +131,8 @@ footer { text-align: center; padding: 34px 0 40px; color: var(--muted); font-siz
   main { grid-template-columns: 1fr; gap: 16px; }
   section, #about { padding: 24px; border-radius: 16px; }
   #about p { font-size: 1rem; }
-  #contact { flex-direction: column; align-items: flex-start; gap: 8px; padding: 24px; }
+  .contact { flex-direction: column; gap: 0; }
+  .contact .dot { display: none; }
   footer { padding: 28px 12px 32px; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } section, #theme-toggle, section:hover { transition: none; transform: none; } }
